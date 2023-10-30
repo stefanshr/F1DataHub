@@ -11,7 +11,6 @@ class RacingVenuesView(APIView):
     def get(self, request, year, *args, **kwargs):
         ff1.Cache.enable_cache("cache")
 
-        # Fetch the event schedule for the given year
         event_schedule = ff1.get_event_schedule(year=year, include_testing=False)
         event_dict = event_schedule.to_dict()
 
@@ -32,13 +31,8 @@ class SessionsFromVenueView(APIView):
     def get(self, request, year, venue, *args, **kwargs):
         ff1.Cache.enable_cache("cache")
 
-        # Fetch the event for the given year and venue
         event = ff1.get_event(year, venue)
-
-        # Convert the event object to a dictionary
         event_dict = event.to_dict()
-
-        # Retrieve the session names
         session_names = []
         for key, value in event_dict.items():
             if 'Session' in key and isinstance(value, str):
@@ -134,23 +128,41 @@ class DriverDataFromVenue(APIView):
                             [-np.sin(angle), np.cos(angle)]])
         return np.matmul(xy, rot_mat)
 
-    def get(self, request, year, venue, session_type, driver_number, lap_number, *args, **kwargs):
+    def segment_by_distance(self, telemetry_data, n_segments):
+        total_distance = telemetry_data[-1]['distance']
+        segment_length = total_distance / n_segments
+        segmented_data = []
+        indices = []
+        start_idx = 0
+
+        for i in range(1, n_segments + 1):
+            target_distance = i * segment_length
+            for end_idx, point in enumerate(telemetry_data[start_idx:], start=start_idx):
+                if point['distance'] >= target_distance:
+                    segmented_data.append(telemetry_data[start_idx:end_idx])
+                    indices.append({'start': start_idx, 'end': end_idx})
+                    start_idx = end_idx
+                    break
+
+        return segmented_data, indices
+
+    def get(self, request, year, venue, session_type, first_driver_number, first_lap_number, second_driver_number,
+            second_lap_number, *args, **kwargs):
         ff1.Cache.enable_cache("cache")
         session = ff1.get_session(year, gp=venue, identifier=session_type)
         session.load()
 
-        # Get circuit rotation angle
         circuit_info = session.get_circuit_info()
         track_angle = circuit_info.rotation / 180 * np.pi
 
-        lap = session.laps.pick_lap(lap_number).pick_driver(driver_number)
-        telemetry_car_pos = lap.get_telemetry()
-        telemetry_car_pos.add_distance()
+        first_lap = session.laps.pick_lap(first_lap_number).pick_driver(first_driver_number)
+        first_telemetry_car_pos = first_lap.get_telemetry()
+        first_telemetry_car_pos.add_distance()
 
-        telemetry_data = []
-        for _, row in telemetry_car_pos.iterrows():
+        first_telemetry_data = []
+        for _, row in first_telemetry_car_pos.iterrows():
             rotated_point = self.rotate([row['X'], row['Y']], angle=track_angle)
-            telemetry_data.append({
+            first_telemetry_data.append({
                 'timestamp': row['Time'],
                 'x': rotated_point[0],
                 'y': rotated_point[1],
@@ -165,20 +177,87 @@ class DriverDataFromVenue(APIView):
                 'distance': row['Distance']
             })
 
-        lap_data = {
-            'lapNumber': lap_number,
+        first_lap_data = {
+            'lapNumber': first_lap_number,
             'driver': next((driver for driver in fetch_drivers(year, venue, session_type) if
-                            driver['driverNumber'] == str(driver_number)), None),
-            'lapTime': lap['LapTime'],
-            'compound': lap['Compound'],
-            'deleted': lap['Deleted'],
-            'deletedReason': lap['DeletedReason'],
-            'tyreLife': lap['TyreLife'],
-            'stint': lap['Stint'],
-            'sector1Time': lap['Sector1Time'],
-            'sector2Time': lap['Sector2Time'],
-            'sector3Time': lap['Sector3Time'],
-            'telemetryData': telemetry_data
+                            driver['driverNumber'] == str(first_driver_number)), None),
+            'lapTime': first_lap['LapTime'],
+            'compound': first_lap['Compound'],
+            'deleted': first_lap['Deleted'],
+            'deletedReason': first_lap['DeletedReason'],
+            'tyreLife': first_lap['TyreLife'],
+            'stint': first_lap['Stint'],
+            'sector1Time': first_lap['Sector1Time'],
+            'sector2Time': first_lap['Sector2Time'],
+            'sector3Time': first_lap['Sector3Time'],
+            'telemetryData': first_telemetry_data
         }
 
-        return Response(lap_data)
+        second_lap = session.laps.pick_lap(second_lap_number).pick_driver(second_driver_number)
+        second_telemetry_car_pos = second_lap.get_telemetry()
+        second_telemetry_car_pos.add_distance()
+
+        second_telemetry_data = []
+
+        for _, row in second_telemetry_car_pos.iterrows():
+            rotated_point = self.rotate([row['X'], row['Y']], angle=track_angle)
+            second_telemetry_data.append({
+                'timestamp': row['Time'],
+                'x': rotated_point[0],
+                'y': rotated_point[1],
+                'z': row['Z'],
+                'status': row['Status'],
+                'throttle': row['Throttle'],
+                'brake': row['Brake'],
+                'speed': row['Speed'],
+                'gear': row['nGear'],
+                'rpm': row['RPM'],
+                'drs': row['DRS'],
+                'distance': row['Distance']
+            })
+
+        second_lap_data = {
+            'lapNumber': second_lap_number,
+            'driver': next((driver for driver in fetch_drivers(year, venue, session_type) if
+                            driver['driverNumber'] == str(second_driver_number)), None),
+            'lapTime': second_lap['LapTime'],
+            'compound': second_lap['Compound'],
+            'deleted': second_lap['Deleted'],
+            'deletedReason': second_lap['DeletedReason'],
+            'tyreLife': second_lap['TyreLife'],
+            'stint': second_lap['Stint'],
+            'sector1Time': second_lap['Sector1Time'],
+            'sector2Time': second_lap['Sector2Time'],
+            'sector3Time': second_lap['Sector3Time'],
+            'telemetryData': second_telemetry_data
+        }
+
+        n_segments = 12
+
+        first_segmented_data, first_indices = self.segment_by_distance(first_telemetry_data, n_segments)
+        second_segmented_data, second_indices = self.segment_by_distance(second_telemetry_data, n_segments)
+
+        faster_driver_segments = []
+
+        for i, (first_segment, second_segment) in enumerate(zip(first_segmented_data, second_segmented_data)):
+            first_time = first_segment[-1]['timestamp'] - first_segment[0]['timestamp']
+            second_time = second_segment[-1]['timestamp'] - second_segment[0]['timestamp']
+
+            if first_time < second_time:
+                faster_driver = first_driver_number
+            else:
+                faster_driver = second_driver_number
+
+            faster_driver_segments.append({
+                'fasterDriver': faster_driver,
+                'firstDriverIndices': first_indices[i],
+                'secondDriverIndices': second_indices[i]
+            })
+
+        response_data = {
+            'firstLapData': first_lap_data,
+            'secondLapData': second_lap_data,
+            'fasterDriverBySegment': faster_driver_segments
+        }
+
+        return Response(response_data)

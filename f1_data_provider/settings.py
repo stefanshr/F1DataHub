@@ -23,7 +23,7 @@ SECRET_KEY = 'django-insecure-^0j@&r2#&1+@+nf5_($1nc7^#^1ofd3dk9rb*-33fxu_ek4l=z
 
 ALLOWED_HOSTS = ['localhost', 'f1-data-provider.stefanhohl.ch', '37.120.177.225']
 
-VERSION_NUMBER = '1.0.0'
+VERSION_NUMBER = '1.0.1'
 
 DEBUG = False
 
