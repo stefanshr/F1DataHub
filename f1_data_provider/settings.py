@@ -23,7 +23,7 @@ SECRET_KEY = 'django-insecure-^0j@&r2#&1+@+nf5_($1nc7^#^1ofd3dk9rb*-33fxu_ek4l=z
 
 ALLOWED_HOSTS = ['localhost', 'f1-data-provider.stefanhohl.ch', '37.120.177.225']
 
-VERSION_NUMBER = '1.0.1'
+VERSION_NUMBER = '1.0.2'
 
 DEBUG = False
 
@@ -55,7 +55,8 @@ ROOT_URLCONF = 'f1_data_provider.urls'
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:4200",
-    "https://f1-data-hub.stefanhohl.ch"
+    "https://f1-data-hub.stefanhohl.ch",
+    "https://f1-data-provider.stefanhohl.ch"
 ]
 
 TEMPLATES = [
